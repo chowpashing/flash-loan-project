@@ -1,12 +1,12 @@
 [package]
-name = "flash-loan"
+name = "arbitrage_bot"
 version = "0.1.0"
 description = "Created with Anchor"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "flash_loan"
+name = "arbitrage_bot"
 
 [features]
 default = []
@@ -16,8 +16,8 @@ no-idl = []
 no-log-ix-name = []
 
 [dependencies]
-anchor-lang = "0.28.0"
+anchor-lang = { version = "0.28.0", features = ["init-if-needed"] }
 anchor-spl = "0.28.0"
-mock_pool = { path = "../mock_pool", features = ["cpi"] }
+mock_dex = { path = "../mock_dex", features = ["cpi"] }
 shared = { path = "../shared", features = ["cpi"] }
-arbitrage_bot = { path = "../arbitrage_bot", features = ["cpi"] }
+

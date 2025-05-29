@@ -1,0 +1,22 @@
+[package]
+name = "mock_pool"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+path = "src/lib.rs"
+
+[dependencies]
+anchor-lang = "0.28.0"
+anchor-spl = "0.28.0"
+shared = { path = "../shared" }
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+
+ 

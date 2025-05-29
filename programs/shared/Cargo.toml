@@ -1,0 +1,19 @@
+[package]
+name = "shared"
+version = "0.1.0"
+description = "Shared data structures for flash loan system"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "shared"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+
+[dependencies]
+anchor-lang = "0.28.0" 

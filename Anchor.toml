@@ -1,17 +1,23 @@
 [toolchain]
+anchor_version = "0.28.0"
+solana_version = "1.17.17"
+rust_version = "nightly-2023-12-01"
 
 [features]
 resolution = true
 skip-lint = false
 
 [programs.localnet]
-flash_loan = "91B4FwqgmGPDgnpyZanv2PxGt8Xkp37vy2GZVcB6jQGQ"
+arbitrage_bot = "2bY7JFDsaAnDhHGBrei3uhT2XW3S1582HR5pxnFR2jMN"
+flash_loan = "GfUtMsTY9MmV9oEN65GPAzy3pVmCq3yiB1d4Ub7WSPZ4"
+mock_dex = "D5CLaTtb5iGTUC7JfaSK9tUVCbjQsEmWvyqmNCPjWQJu"
+mock_pool = "EkBL1af993PK5rNmFCjkGvZ5F13taHT9x2VvLy8uUhmS"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
