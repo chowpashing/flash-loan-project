@@ -14,10 +14,12 @@ cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = "0.28.0"
-anchor-spl = "0.28.0"
+anchor-lang = { version = "0.31.1" }
+anchor-spl = { version = "0.31.1" }
 mock_pool = { path = "../mock_pool", features = ["cpi"] }
 shared = { path = "../shared", features = ["cpi"] }
 arbitrage_bot = { path = "../arbitrage_bot", features = ["cpi"] }
+mock_dex = { path = "../mock_dex", features = ["cpi"] }

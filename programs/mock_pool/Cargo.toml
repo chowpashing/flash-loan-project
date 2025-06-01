@@ -7,16 +7,17 @@ edition = "2021"
 crate-type = ["cdylib", "lib"]
 path = "src/lib.rs"
 
-[dependencies]
-anchor-lang = "0.28.0"
-anchor-spl = "0.28.0"
-shared = { path = "../shared" }
-
 [features]
 default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.31.1" }
+anchor-spl = { version = "0.31.1" }
+shared = { path = "../shared", features = ["cpi"] }
 
  

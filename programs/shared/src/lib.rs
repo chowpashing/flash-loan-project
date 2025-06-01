@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("11111111111111111111111111111111");
+declare_id!("5kPAZ9Gox4F1rnWT3owq5S319A2sG5hdivMGPBg934tW");
 
 #[account]
 pub struct FlashLoanState {
@@ -323,5 +323,20 @@ impl TransactionRecord {
     /// 检查交易是否盈利
     pub fn is_profitable(&self) -> bool {
         self.net_profit > 0
+    }
+}
+
+#[derive(Accounts)]
+pub struct DummyAccounts<'info> {
+    pub signer: Signer<'info>,
+}
+
+#[program]
+pub mod shared {
+    use super::*;
+    
+    // 空程序，仅用于生成 IDL
+    pub fn dummy(_ctx: Context<DummyAccounts>) -> Result<()> {
+        Ok(())
     }
 } 

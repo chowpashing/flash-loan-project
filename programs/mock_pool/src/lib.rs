@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 use shared::{MockPoolState, PoolStatus};
 
-declare_id!("EkBL1af993PK5rNmFCjkGvZ5F13taHT9x2VvLy8uUhmS");
+declare_id!("BtJ6VkrNWjgfPVH63LevLiZYSoKGKfueS1d54i6jWfzq");
 
 #[program]
 pub mod mock_pool {
@@ -27,7 +27,7 @@ pub mod mock_pool {
         pool_state.created_at = Clock::get()?.unix_timestamp;
         pool_state.last_updated = Clock::get()?.unix_timestamp;
         pool_state.status = PoolStatus::Active;
-        pool_state.bump = *ctx.bumps.get("pool_state").unwrap();
+        pool_state.bump = ctx.bumps.pool_state;
 
         // 将 initial_balance 的 SOL 转移到池子账户
         if initial_balance > 0 {

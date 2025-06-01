@@ -1,9 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
-use shared::{DexTradeState, TradeStatus};
 
 // 确保这里的 Program ID 与你 build 后生成的实际 ID 匹配
-declare_id!("D5CLaTtb5iGTUC7JfaSK9tUVCbjQsEmWvyqmNCPjWQJu");
+declare_id!("CP8F2b4Dh43ovvwJ6MBYXx9gKuFZ4zFvw9y74Ahk2wy6");
 
 #[program]
 pub mod mock_dex {
@@ -11,17 +10,22 @@ pub mod mock_dex {
 
     /// 初始化一个模拟的流动性池 (DEX Instance)
     /// 每个池子由一个唯一的 `pool_name` 字符串区分
+    /// 遵循CEI模式：Check-Effects-Interactions
     pub fn initialize_pool(
         ctx: Context<InitializePool>,
         pool_name: String, // 用于区分不同池子的唯一名称
         initial_x_amount: u64,
         initial_y_amount: u64,
     ) -> Result<()> {
+        let pool = &mut ctx.accounts.pool;
+        
+        // === CHECK 阶段：所有验证和检查 ===
+        
         // 验证 pool_name 长度
         require!(!pool_name.is_empty() && pool_name.len() <= 32, ErrorCode::InvalidPoolName);
 
         // 验证初始金额
-        require!(initial_x_amount > 0 && initial_y_amount > 0, ErrorCode::InvalidPoolName);
+        require!(initial_x_amount > 0 && initial_y_amount > 0, ErrorCode::InvalidAmount);
 
         // 验证初始化者的代币余额
         require!(
@@ -32,19 +36,28 @@ pub mod mock_dex {
             ctx.accounts.initializer_token_y_account.amount >= initial_y_amount,
             ErrorCode::InsufficientLiquidity
         );
-
-        let pool = &mut ctx.accounts.pool;
         
         // 验证代币账户所有者
         require!(
-            ctx.accounts.token_x_vault.owner == ctx.accounts.token_program.key(),
+            ctx.accounts.initializer_token_x_account.owner == ctx.accounts.initializer.key(),
             ErrorCode::InvalidTokenAccountOwner
         );
         require!(
-            ctx.accounts.token_y_vault.owner == ctx.accounts.token_program.key(),
+            ctx.accounts.initializer_token_y_account.owner == ctx.accounts.initializer.key(),
             ErrorCode::InvalidTokenAccountOwner
         );
 
+        // === EFFECTS 阶段：更新所有状态 ===
+        
+        // 设置池子状态（在转账之前）
+        pool.x_balance = initial_x_amount;
+        pool.y_balance = initial_y_amount;
+        pool.name = pool_name.clone();
+
+        msg!("🏊‍♀️ Pool状态已设置: '{}' with X: {}, Y: {}", pool_name, initial_x_amount, initial_y_amount);
+
+        // === INTERACTIONS 阶段：所有外部调用 ===
+        
         // 将初始流动性从 initializer 转移到 DEX 的 Vaults
         // 转移 Token X
         token::transfer(
@@ -59,6 +72,8 @@ pub mod mock_dex {
             initial_x_amount,
         )?;
 
+        msg!("📥 Token X 转移完成: {}", initial_x_amount);
+
         // 转移 Token Y
         token::transfer(
             CpiContext::new(
@@ -72,10 +87,7 @@ pub mod mock_dex {
             initial_y_amount,
         )?;
 
-        // 设置池子余额（在实际转移成功后）
-        pool.x_balance = initial_x_amount;
-        pool.y_balance = initial_y_amount;
-        pool.name = pool_name.clone();
+        msg!("📥 Token Y 转移完成: {}", initial_y_amount);
 
         // 发送事件
         emit!(PoolInitialized {
@@ -86,84 +98,28 @@ pub mod mock_dex {
             timestamp: Clock::get()?.unix_timestamp,
         });
 
-        msg!("Initialized DEX pool '{}' with X: {} and Y: {}", pool_name, initial_x_amount, initial_y_amount);
+        msg!("✅ Initialized DEX pool '{}' with X: {} and Y: {}", pool_name, initial_x_amount, initial_y_amount);
         Ok(())
     }
 
-    /// 处理来自共享状态的交易请求 - 独立于套利机器人
-    pub fn execute_trade_from_state(
-        ctx: Context<ExecuteTradeFromState>,
-        trade_id: u64,
-    ) -> Result<()> {
-        let dex_trade_state = &mut ctx.accounts.dex_trade_state;
-        let pool = &mut ctx.accounts.pool;
-        
-        // 验证交易状态
-        require!(
-            dex_trade_state.can_execute(),
-            ErrorCode::InvalidTradeStatus
-        );
-        
-        require!(
-            dex_trade_state.trade_id == trade_id,
-            ErrorCode::InvalidTradeId
-        );
-        
-        // 更新状态为执行中
-        dex_trade_state.status = TradeStatus::Executing;
-        
-        let amount_in = dex_trade_state.amount_in;
-        
-        // 简单价格计算：1:1兑换比率，减去0.3%的手续费
-        let fee_bps = 30; // 0.3% 手续费
-        let amount_out = amount_in
-            .checked_mul(10000 - fee_bps)
-            .ok_or(ErrorCode::Overflow)?
-            .checked_div(10000)
-            .ok_or(ErrorCode::Underflow)?;
-
-        // 确保池子有足够的资金转出
-        require!(pool.y_balance >= amount_out, ErrorCode::InsufficientLiquidity);
-
-        // 模拟交易执行 - 在实际应用中这里会进行真实的代币转移
-        // 这里我们只是更新状态
-        pool.x_balance = pool.x_balance.checked_add(amount_in).ok_or(ErrorCode::Overflow)?;
-        pool.y_balance = pool.y_balance.checked_sub(amount_out).ok_or(ErrorCode::Underflow)?;
-        
-        // 更新交易状态
-        dex_trade_state.actual_amount_out = amount_out;
-        dex_trade_state.status = TradeStatus::Completed;
-
-        // 发送事件
-        emit!(TradeExecutedFromState {
-            trade_id,
-            amount_in,
-            amount_out,
-            trader: dex_trade_state.trader,
-            pool_name: pool.name.clone(),
-            timestamp: Clock::get()?.unix_timestamp,
-        });
-
-        msg!("Executed trade {} with amount_in: {} and amount_out: {}", trade_id, amount_in, amount_out);
-        Ok(())
-    }
-
-    /// 模拟兑换功能 - 保持向后兼容
-    /// 简化：这里使用一个简化的固定费率模型，不模拟真实AMM曲线
-    /// 允许在 Token X 和 Token Y 之间互换
+    /// 真正的AMM兑换功能 - 使用恒定乘积模型 (x * y = k)
+    /// 遵循CEI模式：Check-Effects-Interactions
     pub fn swap(
         ctx: Context<Swap>,
         amount_in: u64, // 卖出多少
-        min_amount_out: u64, // 至少得到多少 (用于滑点保护，但这里简化实现)
+        min_amount_out: u64, // 至少得到多少 (滑点保护)
+        pool_name: String, // 池子名称
     ) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
         let token_program = &ctx.accounts.token_program;
 
         // 复制 pool 的名称和 bump，避免借用冲突
-        let pool_name = pool.name.clone();
-        let pool_bump = *ctx.bumps.get("pool").unwrap();
+        let pool_bump = ctx.bumps.pool;
 
+        // === CHECK 阶段：所有验证和检查 ===
+        
         require!(!pool_name.is_empty(), ErrorCode::InvalidPoolName);
+        require!(amount_in > 0, ErrorCode::InvalidAmount);
 
         // 检查 token_in_account 是 X 还是 Y
         let from_token_account = &ctx.accounts.token_in_account;
@@ -178,49 +134,102 @@ pub mod mock_dex {
             &ctx.accounts.user_token_x // 卖出 Y 得到 X
         };
 
-        // 简单价格计算：1:1兑换比率，减去0.3%的手续费
-        let fee_bps = 30; // 0.3% 手续费
-        let amount_out = amount_in
+        // AMM 恒定乘积计算 (x * y = k)
+        let (reserve_in, reserve_out) = if input_is_x {
+            (pool.x_balance, pool.y_balance)
+        } else {
+            (pool.y_balance, pool.x_balance)
+        };
+
+        // 检查流动性
+        require!(reserve_in > 0 && reserve_out > 0, ErrorCode::InsufficientLiquidity);
+
+        // 计算手续费 (0.3% = 30 bps)
+        let fee_bps = 30u64;
+        let amount_in_with_fee = amount_in
             .checked_mul(10000 - fee_bps)
+            .ok_or(ErrorCode::Overflow)?;
+
+        // AMM 恒定乘积公式计算输出
+        let numerator = amount_in_with_fee
+            .checked_mul(reserve_out)
+            .ok_or(ErrorCode::Overflow)?;
+        
+        let denominator = reserve_in
+            .checked_mul(10000)
             .ok_or(ErrorCode::Overflow)?
-            .checked_div(10000)
+            .checked_add(amount_in_with_fee)
+            .ok_or(ErrorCode::Overflow)?;
+
+        let amount_out = numerator
+            .checked_div(denominator)
             .ok_or(ErrorCode::Underflow)?;
 
+        // 滑点保护：确保输出不少于最小预期
         require!(amount_out >= min_amount_out, ErrorCode::SlippageTooHigh);
 
-        // 确保池子有足够的资金转出
-        if input_is_x { // 卖出 X 换 Y
-            require!(pool.y_balance >= amount_out, ErrorCode::InsufficientLiquidity);
-        } else { // 卖出 Y 换 X
-            require!(pool.x_balance >= amount_out, ErrorCode::InsufficientLiquidity);
+        // 确保池子有足够的储备
+        require!(amount_out < reserve_out, ErrorCode::InsufficientLiquidity);
+
+        // 计算价格影响 (用于事件记录)
+        let price_before = if reserve_in > 0 { 
+            (reserve_out * 10000) / reserve_in 
+        } else { 
+            0 
+        };
+        
+        let new_reserve_in = reserve_in + amount_in;
+        let new_reserve_out = reserve_out - amount_out;
+        let price_after = if new_reserve_in > 0 { 
+            (new_reserve_out * 10000) / new_reserve_in 
+        } else { 
+            0 
+        };
+
+        let price_impact_bps = if price_before > 0 {
+            ((price_before.max(price_after) - price_before.min(price_after)) * 10000) / price_before
+        } else {
+            0
+        };
+
+        // === EFFECTS 阶段：更新所有状态 ===
+        
+        // 更新池子储备状态（在所有外部转账之前）
+        if input_is_x {
+            pool.x_balance = pool.x_balance.checked_add(amount_in).ok_or(ErrorCode::Overflow)?;
+            pool.y_balance = pool.y_balance.checked_sub(amount_out).ok_or(ErrorCode::Underflow)?;
+        } else {
+            pool.y_balance = pool.y_balance.checked_add(amount_in).ok_or(ErrorCode::Overflow)?;
+            pool.x_balance = pool.x_balance.checked_sub(amount_out).ok_or(ErrorCode::Underflow)?;
         }
 
+        msg!("💰 Pool状态已更新: X={}, Y={}", pool.x_balance, pool.y_balance);
+
+        // === INTERACTIONS 阶段：所有外部调用 ===
+        
         // 1. 从用户账户转入到 DEX Vault
         token::transfer(
             CpiContext::new(
                 token_program.to_account_info(),
                 Transfer {
-                    from: from_token_account.to_account_info(), // 用户卖出的Token
-                    to: if input_is_x { ctx.accounts.token_x_vault.to_account_info() } else { ctx.accounts.token_y_vault.to_account_info() }, // 对应DEX Vault
-                    authority: ctx.accounts.user_authority.to_account_info(), // 用户的签名 authority
+                    from: from_token_account.to_account_info(),
+                    to: if input_is_x { 
+                        ctx.accounts.token_x_vault.to_account_info() 
+                    } else { 
+                        ctx.accounts.token_y_vault.to_account_info() 
+                    },
+                    authority: ctx.accounts.user_authority.to_account_info(),
                 },
             ),
             amount_in,
         )?;
 
-        // 更新池子内部余额
-        if input_is_x { // 卖出 X 换 Y
-            pool.x_balance = pool.x_balance.checked_add(amount_in).ok_or(ErrorCode::Overflow)?;
-            pool.y_balance = pool.y_balance.checked_sub(amount_out).ok_or(ErrorCode::Underflow)?;
-        } else { // 卖出 Y 换 X
-            pool.y_balance = pool.y_balance.checked_add(amount_in).ok_or(ErrorCode::Overflow)?;
-            pool.x_balance = pool.x_balance.checked_sub(amount_out).ok_or(ErrorCode::Underflow)?;
-        }
+        msg!("📥 转入完成: {} tokens", amount_in);
 
-        // 2. 从 DEX Vault 转出到用户账户 (DEX PDA 签名)
+        // 2. 从 DEX Vault 转出到用户账户
         let pool_seeds = &[
             b"mock_dex_pool".as_ref(),
-            pool_name.as_bytes(), // 使用复制的池子名字作为种子
+            pool_name.as_bytes(),
             &[pool_bump]
         ];
         let signer_seeds = &[&pool_seeds[..]];
@@ -229,25 +238,38 @@ pub mod mock_dex {
             CpiContext::new_with_signer(
                 token_program.to_account_info(),
                 Transfer {
-                    from: if input_is_x { ctx.accounts.token_y_vault.to_account_info() } else { ctx.accounts.token_x_vault.to_account_info() }, // 对应DEX Vault
-                    to: to_token_account.to_account_info(), // 用户接收的Token
-                    authority: ctx.accounts.pool.to_account_info(), // DEX的Pool PDA作为Vault的authority
+                    from: if input_is_x { 
+                        ctx.accounts.token_y_vault.to_account_info() 
+                    } else { 
+                        ctx.accounts.token_x_vault.to_account_info() 
+                    },
+                    to: to_token_account.to_account_info(),
+                    authority: ctx.accounts.pool.to_account_info(),
                 },
                 signer_seeds,
             ),
             amount_out,
         )?;
 
-        // 发送事件
+        msg!("📤 转出完成: {} tokens", amount_out);
+
+        // 发送增强事件
         emit!(SwapExecuted {
             pool_name: pool_name.clone(),
             amount_in,
             amount_out,
+            price_impact_bps,
             user: ctx.accounts.user_authority.key(),
             timestamp: Clock::get()?.unix_timestamp,
         });
 
-        msg!("Swapped {} for {} on DEX '{}'", amount_in, amount_out, pool_name);
+        msg!(
+            "✅ AMM Swap: {} -> {} (滑点: {}bps) on DEX '{}'", 
+            amount_in, 
+            amount_out, 
+            price_impact_bps,
+            pool_name
+        );
         Ok(())
     }
 }
@@ -262,32 +284,36 @@ pub struct InitializePool<'info> {
     #[account(
         init,
         payer = initializer,
-        seeds = [b"mock_dex_pool", pool_name.as_bytes()], // 使用 pool_name 作为 PDA 种子
+        seeds = [b"mock_dex_pool", pool_name.as_bytes()],
         bump,
-        space = 8 + 8 + 8 + 32, // Discriminator + x_balance + y_balance + name (max 32 bytes)
+        space = 8 + 8 + 8 + 32,
     )]
     pub pool: Account<'info, MockDexPool>,
 
     #[account(mut)]
-    pub initializer: Signer<'info>, // 支付租金和提供初始流动性的签名者
+    pub initializer: Signer<'info>,
 
     #[account(mut)]
-    pub initializer_token_x_account: Account<'info, TokenAccount>, // 初始流动性Token X的来源
+    pub initializer_token_x_account: Account<'info, TokenAccount>,
     #[account(mut)]
-    pub initializer_token_y_account: Account<'info, TokenAccount>, // 初始流动性Token Y的来源
+    pub initializer_token_y_account: Account<'info, TokenAccount>,
 
     #[account(
         init,
         payer = initializer,
+        seeds = [b"token_x_vault", pool.key().as_ref()],
+        bump,
         token::mint = token_x_mint,
-        token::authority = pool, // pool PDA 是 token_x_vault 的 authority
+        token::authority = pool,
     )]
     pub token_x_vault: Account<'info, TokenAccount>,
     #[account(
         init,
         payer = initializer,
+        seeds = [b"token_y_vault", pool.key().as_ref()],
+        bump,
         token::mint = token_y_mint,
-        token::authority = pool, // pool PDA 是 token_y_vault 的 authority
+        token::authority = pool,
     )]
     pub token_y_vault: Account<'info, TokenAccount>,
 
@@ -300,30 +326,11 @@ pub struct InitializePool<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(trade_id: u64)]
-pub struct ExecuteTradeFromState<'info> {
-    #[account(
-        mut,
-        seeds = [b"dex_trade_state", trade_id.to_le_bytes().as_ref()],
-        bump = dex_trade_state.bump
-    )]
-    pub dex_trade_state: Account<'info, DexTradeState>,
-
-    #[account(
-        mut,
-        seeds = [b"mock_dex_pool", pool.name.as_bytes()],
-        bump,
-    )]
-    pub pool: Account<'info, MockDexPool>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
+#[instruction(amount_in: u64, min_amount_out: u64, pool_name: String)]
 pub struct Swap<'info> {
     #[account(
         mut,
-        seeds = [b"mock_dex_pool", pool.name.as_bytes()], // 使用 pool 的名字作为种子
+        seeds = [b"mock_dex_pool", pool_name.as_bytes()], // 使用传入的 pool_name 作为种子
         bump,
     )]
     pub pool: Account<'info, MockDexPool>,
@@ -366,6 +373,7 @@ pub struct SwapExecuted {
     pub pool_name: String,
     pub amount_in: u64,
     pub amount_out: u64,
+    pub price_impact_bps: u64,
     pub user: Pubkey,
     pub timestamp: i64,
 }
@@ -376,16 +384,6 @@ pub struct PoolInitialized {
     pub initial_x_amount: u64,
     pub initial_y_amount: u64,
     pub initializer: Pubkey,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct TradeExecutedFromState {
-    pub trade_id: u64,
-    pub amount_in: u64,
-    pub amount_out: u64,
-    pub trader: Pubkey,
-    pub pool_name: String,
     pub timestamp: i64,
 }
 
@@ -407,8 +405,6 @@ pub enum ErrorCode {
     InvalidTokenAccountOwner,
     #[msg("Invalid pool authority.")]
     InvalidPoolAuthority,
-    #[msg("Invalid trade status.")]
-    InvalidTradeStatus,
-    #[msg("Invalid trade ID.")]
-    InvalidTradeId,
+    #[msg("Invalid amount provided.")]
+    InvalidAmount,
 }
